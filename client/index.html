@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLC communication</title>
+    <script src="./node_modules/axios/dist/axios.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <h3>Communication With PLC</h3>
+    <p id="plcStatus"></p>
+    <select name="" id="coms">
+        <option value="0">Select Port</option>
+    </select>
+    <button id="connect">Connect</button>
+    <button style="display: none;" id="disconnect">Disconnect</button>
+    <div style="margin: 10px 0px;" id="sample"></div>
+    <p id="connectionStatus">You're not connected to any plc</p>
+    <form onsubmit="sendCommand(event)" action="">
+        <select id="select_command" name="" id="">
+            <option value="0">Select Action</option>
+            <option value="sell_cash">Sell Cash</option>
+            <option value="sell_litre">Sell Litre</option>
+            <option value="query">Query</option>
+            <option value="set_price">Set Price</option>
+            <option value="reset">Reset</option>
+        </select>
+        <br>
+        <br>
+        <input class="hidden" id="price" placeholder="Input Price" type="text">
+        <input class="hidden" id="litres" placeholder="Litres" type="text">
+        <button type="submit" id="send_command">Send Command</button>
+    </form>    
+    <script>
+        let socket = io('http://localhost:5000');
+        
+        const plcStatus = document.querySelector("#plcStatus");
+        const connectButton = document.querySelector('#connect');
+        const disconnectButton = document.querySelector('#disconnect');
+        const selectCommandEl = document.querySelector('#select_command');
+        const priceEl = document.querySelector('#price');
+        const litreEl = document.querySelector('#litres');
+        let device_id = '066BFF363430484D43245820';
+        let command = 'SV:0:DEVICE_SEARCH#';
+        let sampleCommand = 'SV:066BFF363430484D43245820:RESET:#;'
+        let sampleDeviceId = 'SV:DEVICE_ID:066BFF363430484D43245820';
+
+        socket.on('data', (data) => {
+            document.querySelector('#connectionStatus').textContent = `Currently connected to ${device_id}`;
+            if(data.message.includes('SV:DEVICE_ID')) {
+                device_id = split(sampleDeviceId, ':')[2]
+                //console.log(device_id)
+                document.querySelector('#sample').textContent = `You're now connected to device ${device_id}`
+            }else{
+                document.querySelector('#sample').textContent = data.message
+            }
+            console.log(data.message)           
+        })
+
+        // socket.on('plcconnect', (data) => {
+        //     document.querySelector('#connectionStatus').textContent = data.message;
+        //     connectButton.textContent = 'disconnnect'
+        //     console.log(data.message);
+        //     //get the plc id and set it;
+        //     fetchPlcId();
+        // })
+
+        socket.on('plcidsuccess', (data) => {
+           console.log('Write command succcessful')
+        })
+
+        socket.on('plciderror', (data) => {
+           console.log('Write command erroneos')
+        })
+
+        socket.on('error', (error) => {
+            console.log(error)
+        })
+
+        const selectDropDown = document.querySelector('#coms');
+        let path = 0;
+
+        function fetchPlcId() {
+            axios.post('http://localhost:5000/api/getPlcId', {command: command}).then(response => {
+                
+                console.log(response.data)
+                //plcStatus.textContent = "Found " + response.data.ports.length + " open port(s)"
+            }).catch(e  => {
+                plcStatus.textContent = "An error occured while fetching ports"
+                console.log(e)
+            })
+        }
+
+        function selectCommand() {
+            switch (this.value) {
+                case 'sell_cash':
+                    priceEl.classList.remove('hidden')
+                    litreEl.classList.add('hidden')
+                    break;
+                case 'sell_litre':
+                    priceEl.classList.add('hidden')
+                    litreEl.classList.remove('hidden')
+                    break;
+                case 'set_price':
+                    priceEl.classList.remove('hidden')
+                    litreEl.classList.add('hidden')
+                    break;
+                
+                default:
+                    priceEl.classList.add('hidden')
+                    litreEl.classList.add('hidden')                   
+                    break;
+            }
+        }
+
+        function sendCommand(event) {
+            event.preventDefault()
+           // console.log(selectCommandEl)
+            //construct command
+            switch (selectCommandEl.value) {
+                case 'sell_cash':
+                    command = `SV:${device_id}:DISPENSE_CASH:${priceEl.value}#`
+                    break;
+                case 'sell_litre':
+                    command = `SV:${device_id}:DISPENSE_LITRE:${litreEl.value}#`
+                    break;
+                case 'set_price':
+                        command = `SV:${device_id}:PRICE:${priceEl.value}#`
+                    break;
+                case 'reset':
+                    command = `SV:${device_id}:RESET#`
+                    break;
+                case 'query':
+                    command = `SV:${device_id}:QUERRY#`
+                    break;
+                
+                default:
+                    command = 'SV:0:DEVICE_SEARCH#';
+                    break;
+            }
+            console.log(command)
+            fetchPlcId(command)
+        }
+
+        function getList() {
+            plcStatus.textContent = "Fetching Available Ports"
+            axios.get('http://localhost:5000/api/list').then(response => {
+                //console.log(response.data)
+                const coms = response.data.ports.forEach((com, index) => {
+                    let option = document.createElement("option")
+                    option.text = com.path
+                    option.value = com.path
+                    selectDropDown.add(option)
+                });
+                // console.log(coms)
+                plcStatus.textContent = "Found " + response.data.ports.length + " open port(s)"
+            }).catch(e  => {
+                plcStatus.textContent = "An error occured while fetching ports"
+                console.log(e)
+            })
+        }
+
+        function initPlc() {
+            if(path != 0) {
+                return axios.post('http://localhost:5000/api/connect', {path: path}).then(response => {
+                    console.log(response.data)
+                }).catch(e  => {
+                    console.log(e)
+                })          
+            }else{
+                alert('Please select the port you want to connect to');
+                return
+            }
+            
+        }
+
+        function closeSerial() {
+            return axios.post('http://localhost:5000/api/disconnect').then(response => {
+                console.log(response.data)
+            }).catch(e  => {
+                console.log(e)
+            }) 
+        }
+
+        function connectToPort() {
+            path = this.value
+           // console.log(this.value)
+        }       
+
+        connectButton.addEventListener('click', initPlc)
+
+        disconnectButton.addEventListener('click', closeSerial)
+
+        selectDropDown.addEventListener('change', connectToPort)
+
+        selectCommandEl.addEventListener('change', selectCommand)
+
+        getList();
+
+    </script>
+</body>
+</html>
